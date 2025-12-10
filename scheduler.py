@@ -4,23 +4,35 @@ import time
 from models import AppointmentRequest, RoutingEvent, Center
 from state import system_state
 
+URGENCY_WEIGHT = 0.2  # higher = urgency matters more
 
 def choose_best_center(request: AppointmentRequest) -> Optional[Center]:
     """
-    SJF / least-loaded routing:
-    - Among all "up" centers, choose one with minimum predicted wait time.
-    - predicted_wait = (current_load + new_work) / capacity
+    Choose the best clinic using a combination of:
+    - SJF-style predicted wait time
+    - urgency-based priority
+
+    score = predicted_wait - urgency * URGENCY_WEIGHT
+
+    Lower score = better.
     """
     candidates = [c for c in system_state.centers.values() if c.is_up and c.capacity > 0]
     if not candidates:
         return None
 
-    # SJF-inspired: choose center with min predicted completion time
-    best = min(
-        candidates,
-        key=lambda c: (c.predicted_wait_time(request.expected_duration), request.urgency),
-    )
-    return best
+    best_center: Optional[Center] = None
+    best_score: float = float("inf")
+
+    for center in candidates:
+        predicted_wait = center.predicted_wait_time(request.expected_duration)
+        score = predicted_wait - (request.urgency * URGENCY_WEIGHT)
+
+        if score < best_score:
+            best_score = score
+            best_center = center
+
+    return best_center
+
 
 
 def route_request(request: AppointmentRequest) -> Optional[Center]:

@@ -4,7 +4,7 @@ import time
 from state import system_state
 
 
-def start_load_decay_worker(decay_step: float = 1.0, interval: float = 1.0) -> None:
+def start_load_decay_worker(decay_step: float = 0.2, interval: float = 1.0) -> None:
     """
     Start a background thread that periodically calls system_state.decay_load().
 
@@ -12,8 +12,8 @@ def start_load_decay_worker(decay_step: float = 1.0, interval: float = 1.0) -> N
     - interval: how often to tick, in seconds
 
     Example: if expected_duration is like 'minutes', then
-             decay_step = 1.0 every 1 second means
-             1 'minute' of simulated work completes per real second.
+             decay_step = 0.2 every 1 second means
+             1 'minute' of simulated work completes per 5 real seconds.
     """
 
     def worker() -> None:

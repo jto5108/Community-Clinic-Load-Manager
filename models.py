@@ -3,7 +3,7 @@ from threading import Lock
 from typing import List, Optional
 import time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---------- Domain models (in-memory) ----------
@@ -63,8 +63,10 @@ class CenterOut(BaseModel):
 
 
 class AppointmentIn(BaseModel):
-    urgency: int = 5          # e.g., 1 = crisis, 10 = routine
-    expected_duration: float  # in "time units" (e.g., 30.0 minutes)
+    # Urgency on a 1–10 scale: 1 = low, 10 = very urgent
+    urgency: int = Field(5, ge=1, le=10)
+    # Duration in abstract "time units" (e.g. minutes)
+    expected_duration: float = Field(..., gt=0)
 
 
 class AppointmentOut(BaseModel):
