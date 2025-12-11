@@ -38,7 +38,8 @@ class SystemState:
         for center in self.centers.values():
             with center.lock:
                 if center.current_load > 0:
-                    center.current_load = max(0.0, center.current_load - decay_step)
+                    effective_step = decay_step * center.capacity / 10
+                    center.current_load = max(0.0, center.current_load - effective_step)
 
 
 

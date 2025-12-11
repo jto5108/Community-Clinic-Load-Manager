@@ -1,38 +1,44 @@
-from typing import Optional
+from typing import Optional, Tuple
 import time
 
 from models import AppointmentRequest, RoutingEvent, Center
 from state import system_state
 
-URGENCY_WEIGHT = 0.2  # higher = urgency matters more
 
-def choose_best_center(request: AppointmentRequest) -> Optional[Center]:
+def choose_best_center(request: AppointmentRequest) -> Tuple[Optional[Center], str]:
     """
-    Choose the best clinic using a combination of:
-    - SJF-style predicted wait time
-    - urgency-based priority
+    Hybrid scheduling:
+    - For low/medium urgency (1–5): pure SJF based on predicted_wait.
+    - For high urgency (6–10): priority override to the highest-capacity clinic.
 
-    score = predicted_wait - urgency * URGENCY_WEIGHT
-
-    Lower score = better.
+    We still compute the SJF choice first so we can log whether
+    we overrode it or not.
     """
     candidates = [c for c in system_state.centers.values() if c.is_up and c.capacity > 0]
     if not candidates:
-        return None
+        return None, "no_centers"
 
-    best_center: Optional[Center] = None
-    best_score: float = float("inf")
+    # --- 1) Pure SJF choice ---
+    def sjf_wait(center: Center) -> float:
+        # Uses your existing predicted_wait_time helper
+        return center.predicted_wait_time(request.expected_duration)
 
-    for center in candidates:
-        predicted_wait = center.predicted_wait_time(request.expected_duration)
-        score = predicted_wait - (request.urgency * URGENCY_WEIGHT)
+    sjf_center = min(candidates, key=sjf_wait)
 
-        if score < best_score:
-            best_score = score
-            best_center = center
+    # --- 2) If urgency is low (1–5), just use SJF ---
+    if request.urgency <= 5:
+        return sjf_center, "least_loaded_sjf"
 
-    return best_center
+    # --- 3) If urgency is high (6–10), prefer the highest-capacity clinic ---
+    # (like sending emergencies to the largest hospital)
+    priority_center = max(candidates, key=lambda c: c.capacity)
 
+    if priority_center.id != sjf_center.id:
+        # We truly overrode the SJF decision
+        return priority_center, "priority_override"
+    else:
+        # Even with priority, SJF and priority agree
+        return sjf_center, "least_loaded_sjf"
 
 
 def route_request(request: AppointmentRequest) -> Optional[Center]:
@@ -40,24 +46,21 @@ def route_request(request: AppointmentRequest) -> Optional[Center]:
     Critical section: updating center.current_load must be protected by a lock
     to avoid race conditions when multiple requests come in concurrently.
     """
-    center = choose_best_center(request)
+    center, reason = choose_best_center(request)
     if center is None:
         return None
 
     # ---- Critical Section (protected by mutex) ----
     with center.lock:
-        # Entry section (mutex acquired)
         center.current_load += request.expected_duration
-        # Critical section: update shared state
 
-    # Exit section: lock automatically released by context manager
     request.assigned_center_id = center.id
     system_state.add_event(
         RoutingEvent(
             timestamp=time.time(),
             request_id=request.id,
             center_id=center.id,
-            reason="least_loaded_sjf",
+            reason=reason,
         )
     )
     return center
